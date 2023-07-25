@@ -40,8 +40,7 @@ public:
 
 public:
     time_t expire;
-    
-    void (* cb_func)(client_data *);
+    void (*cb_func)(client_data *);
     client_data *user_data;
     util_timer *prev;
     util_timer *next;
@@ -73,19 +72,25 @@ public:
 
     void init(int timeslot);
 
-    //对文件描述符设置非阻塞
+    // 对文件描述符设置非阻塞
     int setnonblocking(int fd);
 
-    //将内核事件表注册读事件，ET模式，选择开启EPOLLONESHOT
-    void addfd(int epollfd, int fd, bool one_shot, int TRIGMode);
+    // 将内核事件表注册读事件，选择开启EPOLLONESHOT、ET模式
+    void addfd(int epollfd, int fd, bool one_shot, int trigMode);
 
-    //信号处理函数
+    // 从内核事件表删除描述符
+    void removefd(int epollfd, int fd);
+
+    // 将事件重置为EPOLLONESHOT
+    void modfd(int epollfd, int fd, int ev, int trigMode);
+
+    // 信号处理函数
     static void sig_handler(int sig);
 
-    //设置信号函数
+    // 设置信号函数
     void addsig(int sig, void(handler)(int), bool restart = true);
 
-    //定时处理任务，重新定时以不断触发SIGALRM信号
+    // 定时处理任务，重新定时以不断触发SIGALRM信号
     void timer_handler();
 
     void show_error(int connfd, const char *info);
@@ -97,6 +102,7 @@ public:
     int m_TIMESLOT;
 };
 
+// 定时器回调函数
 void cb_func(client_data *user_data);
 
 #endif

@@ -83,9 +83,8 @@ public:
         return &m_address;
     }
     void initmysql_result(connection_pool *connPool);
-    int timer_flag;
-    int improv;
-
+    int io_fail_flag; // IO读写失败标志
+    int io_done_flag; // IO读写完成标志
 
 private:
     void init();
@@ -111,7 +110,7 @@ public:
     static int m_epollfd;
     static int m_user_count;
     MYSQL *mysql;
-    int m_state;  //读为0, 写为1
+    int m_state; // 读为0, 写为1
 
 private:
     int m_sockfd;
@@ -134,19 +133,22 @@ private:
     struct stat m_file_stat;
     struct iovec m_iv[2];
     int m_iv_count;
-    int cgi;        //是否启用的POST
-    char *m_string; //存储请求头数据
+    int cgi;        // 是否启用的POST
+    char *m_string; // 存储请求头数据
     int bytes_to_send;
     int bytes_have_send;
     char *doc_root;
 
     map<string, string> m_users;
-    int m_TRIGMode;
-    int m_close_log;
+    locker m_lock;
+    int m_trigMode;
+    int m_disable_log;
 
     char sql_user[100];
     char sql_passwd[100];
     char sql_name[100];
+
+    Utils utils;
 };
 
 #endif

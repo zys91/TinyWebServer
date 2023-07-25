@@ -73,7 +73,7 @@ Demo演示
 
 压力测试
 -------------
-在关闭日志后，使用Webbench对服务器进行压力测试，对listenfd和connfd分别采用ET和LT模式，均可实现上万的并发连接，下面列出的是两者组合后的测试结果. 
+在禁用日志后，使用Webbench对服务器进行压力测试，对listenfd和connfd分别采用ET和LT模式，均可实现上万的并发连接，下面列出的是两者组合后的测试结果. 
 
 > * Proactor，LT + LT，93251 QPS
 
@@ -114,7 +114,7 @@ Demo演示
 - [x] 优化代码结构，封装工具类以减少全局变量
 - [x] 编译一次即可，命令行进行个性化测试更加友好
 - [x] main函数封装重构
-- [x] 新增命令行日志开关，关闭日志后更新压力测试结果
+- [x] 新增命令行日志开关，禁用日志后更新压力测试结果
 - [x] 改进编译方式，只配置一次SQL信息即可
 - [x] 新增Reactor模式，并完成压力测试
 
@@ -189,7 +189,7 @@ Demo演示
 ------
 
 ```C++
-./server [-p port] [-l LOGWrite] [-m TRIGMode] [-o OPT_LINGER] [-s sql_num] [-t thread_num] [-c close_log] [-a actor_model]
+./server [-p port] [-l log_writeMode] [-m trigMode] [-o OPT_LINGER] [-s sql_num] [-t thread_num] [-c disable_log] [-a actor_model]
 ```
 
 温馨提示:以上参数不是非必须，不用全部使用，根据个人情况搭配选用即可.
@@ -211,12 +211,12 @@ Demo演示
 	* 默认为8
 * -t，线程数量
 	* 默认为8
-* -c，关闭日志，默认打开
-	* 0，打开日志
-	* 1，关闭日志
-* -a，选择反应堆模型，默认Proactor
-	* 0，Proactor模型
-	* 1，Reactor模型
+* -c，禁用日志，默认启用
+	* 0，启用日志
+	* 1，禁用日志
+* -a，选择事件处理模型，默认Proactor
+	* 0，Proactor模型（反应器）
+	* 1，Reactor模型（主动器）
 
 测试示例命令与含义
 
@@ -230,8 +230,8 @@ Demo演示
 - [x] 使用优雅关闭连接
 - [x] 数据库连接池内有10条连接
 - [x] 线程池内有10条线程
-- [x] 关闭日志
-- [x] Reactor反应堆模型
+- [x] 禁用日志
+- [x] Reactor模型
 
 庖丁解牛
 ------------
