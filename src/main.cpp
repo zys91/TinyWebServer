@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
     // 初始化
     server.init(url, port, user, passwd, databasename, config.PORT, config.LOGWriteMode,
                 config.OPT_LINGER, config.trigMode, config.sql_num, config.thread_num,
-                config.disable_log, config.actor_model);
+                config.disable_log, config.actor_model, config.enable_ipv6);
 
     // 日志
     server.log_init();
@@ -26,7 +26,7 @@ int main(int argc, char *argv[])
     // 数据库
     server.sql_pool();
 
-    // 线程池s
+    // 线程池
     server.thread_pool();
 
     // 触发模式

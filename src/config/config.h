@@ -42,6 +42,9 @@ public:
 
     // 并发模型选择
     int actor_model;
+
+    // 双栈支持
+    int enable_ipv6;
 };
 
 #endif

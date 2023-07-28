@@ -20,7 +20,9 @@ WebServer::WebServer()
 WebServer::~WebServer()
 {
     close(m_epollfd);
-    close(m_listenfd);
+    close(m_listenfd_v4);
+    if (m_enable_ipv6)
+        close(m_listenfd_v6);
     close(m_pipefd[1]);
     close(m_pipefd[0]);
     delete[] users;
@@ -29,7 +31,7 @@ WebServer::~WebServer()
 }
 
 void WebServer::init(string url, int port, string user, string passWord, string databaseName, int listen_port, int log_writeMode,
-                     int opt_linger, int trigMode, int sql_num, int thread_num, int disable_log, int actor_model)
+                     int opt_linger, int trigMode, int sql_num, int thread_num, int disable_log, int actor_model, int enable_ipv6)
 {
     m_url = url;
     m_port = port;
@@ -44,6 +46,7 @@ void WebServer::init(string url, int port, string user, string passWord, string 
     m_thread_num = thread_num;
     m_disable_log = disable_log;
     m_actormodel = actor_model;
+    m_enable_ipv6 = enable_ipv6;
 }
 
 void WebServer::trig_mode()
@@ -104,48 +107,97 @@ void WebServer::thread_pool()
 
 void WebServer::eventListen()
 {
-    // socket创建监听描述符
-    m_listenfd = socket(PF_INET, SOCK_STREAM, 0);
-    assert(m_listenfd >= 0);
+    // 创建 IPv4 的监听套接字
+    m_listenfd_v4 = socket(PF_INET, SOCK_STREAM, 0);
+    assert(m_listenfd_v4 >= 0);
 
+    struct linger tmp;
     // 优雅关闭连接 0:关闭 1:开启
-    if (0 == m_OPT_LINGER)
+    if (m_OPT_LINGER)
     {
-        struct linger tmp = {0, 1}; // Linger选项被禁用,即关闭套接字时立即关闭
-        setsockopt(m_listenfd, SOL_SOCKET, SO_LINGER, &tmp, sizeof(tmp));
+        tmp.l_onoff = 1; // Linger选项开启,且关闭套接字时延迟1秒钟
+        tmp.l_linger = 1;
+        setsockopt(m_listenfd_v4, SOL_SOCKET, SO_LINGER, &tmp, sizeof(tmp));
     }
-    else if (1 == m_OPT_LINGER)
+    else
     {
-        struct linger tmp = {1, 1}; // Linger选项开启,且关闭套接字时延迟1秒钟
-        setsockopt(m_listenfd, SOL_SOCKET, SO_LINGER, &tmp, sizeof(tmp));
+        tmp.l_onoff = 0; // Linger选项被禁用,即关闭套接字时立即关闭
+        setsockopt(m_listenfd_v4, SOL_SOCKET, SO_LINGER, &tmp, sizeof(tmp));
     }
 
-    // 定义IPv4套接字地址结构
-    struct sockaddr_in address;
-    bzero(&address, sizeof(address));
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_ANY);
-    address.sin_port = htons(m_listen_port);
+    // 设置端口复用
+    int flag = 1;
+    setsockopt(m_listenfd_v4, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag));
+
+    // 定义 IPv4 套接字地址结构
+    struct sockaddr_in address_v4;
+    bzero(&address_v4, sizeof(address_v4));
+    address_v4.sin_family = AF_INET;
+    address_v4.sin_addr.s_addr = htonl(INADDR_ANY);
+    address_v4.sin_port = htons(m_listen_port);
 
     int ret = 0;
-    int flag = 1;
-    // 设置端口复用
-    setsockopt(m_listenfd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag));
-    // 绑定
-    ret = bind(m_listenfd, (struct sockaddr *)&address, sizeof(address));
+    // 绑定 IPv4 地址
+    ret = bind(m_listenfd_v4, (struct sockaddr *)&address_v4, sizeof(address_v4));
     assert(ret >= 0);
-    // 监听 套接字可以排队等待的最大挂起连接数 N(128)
-    ret = listen(m_listenfd, 128);
+
+    // 监听，设置适当的最大挂起连接数backlog(128)
+    int backlog = 128;
+    ret = listen(m_listenfd_v4, backlog);
     assert(ret >= 0);
+
+    // 双栈支持，启用IPv6
+    if (m_enable_ipv6)
+    {
+        // 创建 IPv6 的监听套接字
+        m_listenfd_v6 = socket(AF_INET6, SOCK_STREAM, 0);
+        assert(m_listenfd_v6 >= 0);
+        // 优雅关闭连接 0:关闭 1:开启
+        if (m_OPT_LINGER)
+        {
+            tmp.l_onoff = 1; // Linger选项开启,且关闭套接字时延迟1秒钟
+            tmp.l_linger = 1;
+            setsockopt(m_listenfd_v6, SOL_SOCKET, SO_LINGER, &tmp, sizeof(tmp));
+        }
+        else
+        {
+            tmp.l_onoff = 0; // Linger选项被禁用,即关闭套接字时立即关闭
+            setsockopt(m_listenfd_v6, SOL_SOCKET, SO_LINGER, &tmp, sizeof(tmp));
+        }
+
+        // 设置端口复用
+        setsockopt(m_listenfd_v6, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag));
+        // 设置 IPv6 只监听v6地址，防止后面同时绑定发生冲突
+        setsockopt(m_listenfd_v6, IPPROTO_IPV6, IPV6_V6ONLY, (const void *)&flag, sizeof(flag));
+
+        // 定义 IPv6 套接字地址结构
+        struct sockaddr_in6 address_v6;
+        bzero(&address_v6, sizeof(address_v6));
+        address_v6.sin6_family = AF_INET6;
+        address_v6.sin6_addr = in6addr_any;
+        address_v6.sin6_port = htons(m_listen_port);
+
+        // 绑定 IPv6 地址
+        ret = bind(m_listenfd_v6, (struct sockaddr *)&address_v6, sizeof(address_v6));
+        assert(ret >= 0);
+
+        // 监听，设置适当的最大挂起连接数backlog(128)
+        ret = listen(m_listenfd_v6, backlog);
+        assert(ret >= 0);
+    }
 
     utils.init(TIMESLOT);
 
     // epoll创建内核事件表 size(1024)是一个大小提示，它向内核提供了与该 epoll 实例相关联的文件描述符的数，但不是一个硬性限制
     m_epollfd = epoll_create(1024);
     assert(m_epollfd != -1);
-    // 监听描述符加入内核事件表
-    utils.addfd(m_epollfd, m_listenfd, false, m_LISTENTrigmode);
     http_conn::m_epollfd = m_epollfd;
+
+    // 监听 IPv4 套接字描述符加入内核事件表
+    utils.addfd(m_epollfd, m_listenfd_v4, false, m_LISTENTrigmode);
+
+    if (m_enable_ipv6) // 监听 IPv6 套接字描述符加入内核事件表
+        utils.addfd(m_epollfd, m_listenfd_v6, false, m_LISTENTrigmode);
 
     // 创建管道 socketpair创建一对无名的、相互连接的套接字 用于进程间通信(信号的传递) 0:读端 1:写端
     ret = socketpair(PF_UNIX, SOCK_STREAM, 0, m_pipefd);
@@ -158,7 +210,7 @@ void WebServer::eventListen()
     utils.addsig(SIGPIPE, SIG_IGN);
     // 设置信号处理函数 SIGALRM: Alarm clock 信号由alarm函数设置的定时器超时时产生
     utils.addsig(SIGALRM, utils.sig_handler, false);
-    // 设置信号处理函数 SIGTERM: Termination 信号由kill函数发送，用来结束进程
+    // 设置信号处理函数 SIGTERM: Termination 信号由kill函数发送(ctrl+c)，用来结束进程
     utils.addsig(SIGTERM, utils.sig_handler, false);
 
     // 计划一次TIMESLOT时间(s)触发SIGALRM信号 用于定时处理任务 定时关闭不活跃连接
@@ -208,14 +260,14 @@ void WebServer::deal_timer(util_timer *timer, int sockfd)
     LOG_INFO("close fd %d", users_timer[sockfd].sockfd);
 }
 
-bool WebServer::dealclinetdata()
+bool WebServer::dealclinetdata(int sockfd)
 {
     struct sockaddr_in client_address;
     socklen_t client_addrlength = sizeof(client_address);
     // LT
     if (0 == m_LISTENTrigmode)
     {
-        int connfd = accept(m_listenfd, (struct sockaddr *)&client_address, &client_addrlength);
+        int connfd = accept(sockfd, (struct sockaddr *)&client_address, &client_addrlength);
         if (connfd < 0)
         {
             LOG_ERROR("%s:errno is:%d", "accept error", errno);
@@ -234,7 +286,7 @@ bool WebServer::dealclinetdata()
     {
         while (1)
         {
-            int connfd = accept(m_listenfd, (struct sockaddr *)&client_address, &client_addrlength);
+            int connfd = accept(sockfd, (struct sockaddr *)&client_address, &client_addrlength);
             if (connfd < 0)
             {
                 LOG_ERROR("%s:errno is:%d", "accept error", errno);
@@ -404,9 +456,9 @@ void WebServer::eventLoop()
             int sockfd = events[i].data.fd;
 
             // 处理新到的客户连接
-            if (sockfd == m_listenfd)
+            if (sockfd == m_listenfd_v4 || sockfd == m_listenfd_v6)
             {
-                bool flag = dealclinetdata();
+                bool flag = dealclinetdata(sockfd);
                 if (flag == false)
                     continue;
             }

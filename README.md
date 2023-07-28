@@ -217,6 +217,9 @@ Demo演示
 * -a，选择事件处理模型，默认Proactor
 	* 0，Proactor模型（反应器）
 	* 1，Reactor模型（主动器）
+* -n，支持双栈，开启IPv6，默认仅IPv4
+	* 0，仅IPv4
+	* 1，双栈，IPv4+v6
 
 测试示例命令与含义
 

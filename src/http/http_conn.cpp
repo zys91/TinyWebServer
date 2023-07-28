@@ -46,6 +46,8 @@ void http_conn::initmysql_result(connection_pool *connPool)
 
 int http_conn::m_user_count = 0;
 int http_conn::m_epollfd = -1;
+locker http_conn::m_lock;
+map<string, string> http_conn::m_users;
 
 // 关闭连接，关闭一个连接，客户总量减一
 void http_conn::close_conn(bool real_close)

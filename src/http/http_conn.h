@@ -109,6 +109,8 @@ private:
 public:
     static int m_epollfd;
     static int m_user_count;
+    static locker m_lock;
+    static map<string, string> m_users;
     MYSQL *mysql;
     int m_state; // 读为0, 写为1
 
@@ -133,14 +135,12 @@ private:
     struct stat m_file_stat;
     struct iovec m_iv[2];
     int m_iv_count;
-    int cgi;        // 是否启用的POST
+    int cgi;        // 是否启用POST
     char *m_string; // 存储请求头数据
     int bytes_to_send;
     int bytes_have_send;
     char *doc_root;
 
-    map<string, string> m_users;
-    locker m_lock;
     int m_trigMode;
     int m_disable_log;
 

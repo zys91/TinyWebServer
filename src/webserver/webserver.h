@@ -27,7 +27,7 @@ public:
 
     void init(string url, int port, string user, string passWord, string databaseName, int listen_port,
               int log_writeMode, int opt_linger, int trigMode, int sql_num,
-              int thread_num, int disable_log, int actor_model);
+              int thread_num, int disable_log, int actor_model, int enable_ipv6);
 
     void thread_pool();
     void sql_pool();
@@ -38,7 +38,7 @@ public:
     void timer(int connfd, struct sockaddr_in client_address);
     void adjust_timer(util_timer *timer);
     void deal_timer(util_timer *timer, int sockfd);
-    bool dealclinetdata();
+    bool dealclinetdata(int sockfd);
     bool dealwithsignal(bool &timeout, bool &stop_server);
     void dealwithread(int sockfd);
     void dealwithwrite(int sockfd);
@@ -50,6 +50,7 @@ public:
     int m_log_writeMode; // 日志写入模式
     int m_disable_log;   // 是否禁用日志
     int m_actormodel;    // 并发模型切换
+    int m_enable_ipv6;   // 双栈支持
 
     int m_pipefd[2];
     int m_epollfd;
@@ -71,7 +72,8 @@ public:
     // epoll_event相关
     epoll_event events[MAX_EVENT_NUMBER];
 
-    int m_listenfd;       // 监听socket文件描述符
+    int m_listenfd_v4;    // IPv4 的监听套接字
+    int m_listenfd_v6;    // IPv6 的监听套接字
     int m_OPT_LINGER;     // 优雅关闭连接选项
     int m_trigMode;       // 组合触发模式
     int m_LISTENTrigmode; // listenfd触发模式
