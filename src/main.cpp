@@ -1,4 +1,7 @@
 #include "config/config.h"
+#include "../webserver/webserver.h"
+
+using namespace std;
 
 int main(int argc, char *argv[])
 {
@@ -6,7 +9,7 @@ int main(int argc, char *argv[])
     string url = "192.168.8.215";
     int port = 3306;
     string user = "root";
-    string passwd = "hhuc404";
+    string passwd = "root";
     string databasename = "webserver";
 
     // 命令行解析

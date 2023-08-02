@@ -1,10 +1,6 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include "../webserver/webserver.h"
-
-using namespace std;
-
 class Config
 {
 public:

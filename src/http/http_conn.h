@@ -1,30 +1,16 @@
-#ifndef HTTPCONNECTION_H
-#define HTTPCONNECTION_H
-#include <unistd.h>
-#include <signal.h>
-#include <sys/types.h>
-#include <sys/epoll.h>
-#include <fcntl.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <assert.h>
-#include <sys/stat.h>
-#include <string.h>
-#include <pthread.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/mman.h>
-#include <stdarg.h>
-#include <errno.h>
-#include <sys/wait.h>
-#include <sys/uio.h>
+#ifndef HTTP_CONN_H
+#define HTTP_CONN_H
+
+#include <string>
 #include <map>
+#include <mysql/mysql.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <netinet/in.h>
 
 #include "../lock/locker.h"
-#include "../CGImysql/sql_connection_pool.h"
-#include "../timer/lst_timer.h"
-#include "../log/log.h"
+#include "../mysqlpool/sql_connection_pool.h"
+#include "../utils/utils.h"
 
 class http_conn
 {
@@ -73,7 +59,7 @@ public:
     ~http_conn() {}
 
 public:
-    void init(int sockfd, const sockaddr_in &addr, char *, int, int, string user, string passwd, string sqlname);
+    void init(int sockfd, const sockaddr_in &addr, char *, int, int, std::string user, std::string passwd, std::string sqlname);
     void close_conn(bool real_close = true);
     void process();
     bool read_once();
@@ -109,8 +95,9 @@ private:
 public:
     static int m_epollfd;
     static int m_user_count;
-    static locker m_lock;
-    static map<string, string> m_users;
+    static locker m_sql_lock;
+    static locker m_count_lock;
+    static std::map<std::string, std::string> m_users;
     MYSQL *mysql;
     int m_state; // 读为0, 写为1
 

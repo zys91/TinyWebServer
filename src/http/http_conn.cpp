@@ -1,7 +1,17 @@
 #include "http_conn.h"
 
-#include <mysql/mysql.h>
-#include <fstream>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
+#include <sys/epoll.h>
+#include <sys/mman.h>
+#include <sys/uio.h>
+#include <unistd.h>
+
+#include "../log/log.h"
+
+using namespace std;
 
 // 定义http响应的一些状态信息
 const char *ok_200_title = "OK";
@@ -30,10 +40,10 @@ void http_conn::initmysql_result(connection_pool *connPool)
     MYSQL_RES *result = mysql_store_result(mysql);
 
     // 返回结果集中的列数
-    int num_fields = mysql_num_fields(result);
+    // int num_fields = mysql_num_fields(result);
 
     // 返回所有字段结构的数组
-    MYSQL_FIELD *fields = mysql_fetch_fields(result);
+    // MYSQL_FIELD *fields = mysql_fetch_fields(result);
 
     // 从结果集中获取下一行，将对应的用户名和密码，存入map中
     while (MYSQL_ROW row = mysql_fetch_row(result))
@@ -42,11 +52,15 @@ void http_conn::initmysql_result(connection_pool *connPool)
         string temp2(row[1]);
         m_users[temp1] = temp2;
     }
+
+    // 释放结果集使用的内存
+    mysql_free_result(result);
 }
 
 int http_conn::m_user_count = 0;
 int http_conn::m_epollfd = -1;
-locker http_conn::m_lock;
+locker http_conn::m_sql_lock;
+locker http_conn::m_count_lock;
 map<string, string> http_conn::m_users;
 
 // 关闭连接，关闭一个连接，客户总量减一
@@ -57,7 +71,9 @@ void http_conn::close_conn(bool real_close)
         printf("close %d\n", m_sockfd);
         utils.removefd(m_epollfd, m_sockfd);
         m_sockfd = -1;
+        m_count_lock.lock();
         m_user_count--;
+        m_count_lock.unlock();
     }
 }
 
@@ -69,7 +85,9 @@ void http_conn::init(int sockfd, const sockaddr_in &addr, char *root, int trigMo
     m_address = addr;
 
     utils.addfd(m_epollfd, sockfd, true, m_trigMode);
+    m_count_lock.lock();
     m_user_count++;
+    m_count_lock.unlock();
 
     // 当浏览器出现连接重置时，可能是网站根目录出错或http响应格式出错或者访问的文件中内容完全为空
     doc_root = root;
@@ -256,7 +274,7 @@ http_conn::HTTP_CODE http_conn::parse_headers(char *text)
         text += strspn(text, " \t");
         if (strcasecmp(text, "keep-alive") == 0)
         {
-            m_linger = true;
+            m_linger = true; // 长连接
         }
     }
     else if (strncasecmp(text, "Content-length:", 15) == 0)
@@ -349,7 +367,7 @@ http_conn::HTTP_CODE http_conn::do_request()
     {
 
         // 根据标志判断是登录检测还是注册检测
-        char flag = m_url[1];
+        // char flag = m_url[1];
 
         char *m_url_real = (char *)malloc(sizeof(char) * 200);
         strcpy(m_url_real, "/");
@@ -384,10 +402,10 @@ http_conn::HTTP_CODE http_conn::do_request()
 
             if (m_users.find(name) == m_users.end())
             {
-                m_lock.lock();
+                m_sql_lock.lock();
                 int res = mysql_query(mysql, sql_insert);
                 m_users.insert(pair<string, string>(name, password));
-                m_lock.unlock();
+                m_sql_lock.unlock();
 
                 if (!res)
                     strcpy(m_url, "/log.html");
@@ -465,6 +483,7 @@ http_conn::HTTP_CODE http_conn::do_request()
     close(fd);
     return FILE_REQUEST;
 }
+
 void http_conn::unmap()
 {
     if (m_file_address)
@@ -473,6 +492,7 @@ void http_conn::unmap()
         m_file_address = 0;
     }
 }
+
 bool http_conn::write()
 {
     int temp = 0;
@@ -490,7 +510,7 @@ bool http_conn::write()
 
         if (temp < 0)
         {
-            if (errno == EAGAIN)
+            if (errno == EAGAIN) // 写缓冲区已满，等待下一轮 EPOLLOUT 事件
             {
                 utils.modfd(m_epollfd, m_sockfd, EPOLLOUT, m_trigMode);
                 return true;
@@ -518,7 +538,7 @@ bool http_conn::write()
             unmap();
             utils.modfd(m_epollfd, m_sockfd, EPOLLIN, m_trigMode);
 
-            if (m_linger)
+            if (m_linger) // 根据 HTTP 请求中的 Connection 字段决定是否关闭连接
             {
                 init();
                 return true;
@@ -530,6 +550,7 @@ bool http_conn::write()
         }
     }
 }
+
 bool http_conn::add_response(const char *format, ...)
 {
     if (m_write_idx >= WRITE_BUFFER_SIZE)
@@ -549,35 +570,43 @@ bool http_conn::add_response(const char *format, ...)
 
     return true;
 }
+
 bool http_conn::add_status_line(int status, const char *title)
 {
     return add_response("%s %d %s\r\n", "HTTP/1.1", status, title);
 }
+
 bool http_conn::add_headers(int content_len)
 {
     return add_content_length(content_len) && add_linger() &&
            add_blank_line();
 }
+
 bool http_conn::add_content_length(int content_len)
 {
     return add_response("Content-Length:%d\r\n", content_len);
 }
+
 bool http_conn::add_content_type()
 {
     return add_response("Content-Type:%s\r\n", "text/html");
 }
+
 bool http_conn::add_linger()
 {
     return add_response("Connection:%s\r\n", (m_linger == true) ? "keep-alive" : "close");
 }
+
 bool http_conn::add_blank_line()
 {
     return add_response("%s", "\r\n");
 }
+
 bool http_conn::add_content(const char *content)
 {
     return add_response("%s", content);
 }
+
 bool http_conn::process_write(HTTP_CODE ret)
 {
     switch (ret)
@@ -637,6 +666,7 @@ bool http_conn::process_write(HTTP_CODE ret)
     bytes_to_send = m_write_idx;
     return true;
 }
+
 void http_conn::process()
 {
     HTTP_CODE read_ret = process_read();

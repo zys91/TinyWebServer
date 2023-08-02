@@ -1,18 +1,12 @@
 #ifndef WEBSERVER_H
 #define WEBSERVER_H
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <cassert>
+#include <string>
 #include <sys/epoll.h>
 
+#include "../timer/lst_timer.h"
 #include "../threadpool/threadpool.h"
+#include "../utils/utils.h"
 #include "../http/http_conn.h"
 
 const int MAX_FD = 65536;           // 最大文件描述符
@@ -25,7 +19,7 @@ public:
     WebServer();
     ~WebServer();
 
-    void init(string url, int port, string user, string passWord, string databaseName, int listen_port,
+    void init(std::string url, int port, std::string user, std::string passWord, std::string databaseName, int listen_port,
               int log_writeMode, int opt_linger, int trigMode, int sql_num,
               int thread_num, int disable_log, int actor_model, int enable_ipv6);
 
@@ -57,12 +51,12 @@ public:
     http_conn *users; // 用户连接数组
 
     // 数据库相关
-    connection_pool *m_connPool; // 单个数据库连接池
-    string m_url;                // 数据库地址
+    connection_pool *m_connPool; // 数据库连接池 单例模式
+    std::string m_url;           // 数据库地址
     int m_port;                  // 数据库端口
-    string m_user;               // 登陆数据库用户名
-    string m_passWord;           // 登陆数据库密码
-    string m_databaseName;       // 使用数据库名
+    std::string m_user;          // 登陆数据库用户名
+    std::string m_passWord;      // 登陆数据库密码
+    std::string m_databaseName;  // 使用数据库名
     int m_sql_num;
 
     // 线程池相关

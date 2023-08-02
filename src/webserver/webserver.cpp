@@ -1,11 +1,22 @@
 #include "webserver.h"
+#include <arpa/inet.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <signal.h>
+#include <string.h>
+
+using namespace std;
 
 WebServer::WebServer()
 {
     // http_conn类对象 MAX_FD: ulimit -n
     users = new http_conn[MAX_FD];
 
-    // root文件夹路径
+    // web资源文件夹路径
     char server_path[200];
     getcwd(server_path, 200);
     char root[13] = "/../res/root";
@@ -83,9 +94,9 @@ void WebServer::log_init()
     {
         // 初始化日志
         if (1 == m_log_writeMode)
-            Log::get_instance()->init("./Server.log", m_disable_log, 2000, 800000, 800);
+            Log::GetInstance()->init("./Server.log", m_disable_log, 2000, 800000, 800);
         else
-            Log::get_instance()->init("./Server.log", m_disable_log, 2000, 800000, 0);
+            Log::GetInstance()->init("./Server.log", m_disable_log, 2000, 800000, 0);
     }
 }
 
@@ -202,6 +213,8 @@ void WebServer::eventListen()
     // 创建管道 socketpair创建一对无名的、相互连接的套接字 用于进程间通信(信号的传递) 0:读端 1:写端
     ret = socketpair(PF_UNIX, SOCK_STREAM, 0, m_pipefd);
     assert(ret != -1);
+    Utils::u_pipefd = m_pipefd;
+
     // 设置管道写端为非阻塞 信号处理函数中写入管道
     utils.setnonblocking(m_pipefd[1]);
     // 设置管道读端为非阻塞，并添加到epoll内核事件表中
@@ -215,10 +228,17 @@ void WebServer::eventListen()
 
     // 计划一次TIMESLOT时间(s)触发SIGALRM信号 用于定时处理任务 定时关闭不活跃连接
     alarm(TIMESLOT);
+}
 
-    // 工具类,信号和描述符基础操作
-    Utils::u_pipefd = m_pipefd;
-    Utils::u_epollfd = m_epollfd;
+// 定时器回调函数
+void timer_cb(int epollfd, client_data *user_data)
+{
+    epoll_ctl(epollfd, EPOLL_CTL_DEL, user_data->sockfd, 0);
+    assert(user_data);
+    close(user_data->sockfd);
+    http_conn::m_count_lock.lock();
+    http_conn::m_user_count--;
+    http_conn::m_count_lock.unlock();
 }
 
 void WebServer::timer(int connfd, struct sockaddr_in client_address)
@@ -231,7 +251,7 @@ void WebServer::timer(int connfd, struct sockaddr_in client_address)
     users_timer[connfd].sockfd = connfd;
     util_timer *timer = new util_timer;
     timer->user_data = &users_timer[connfd];
-    timer->cb_func = cb_func;
+    timer->cb_func = timer_cb;
     time_t cur = time(NULL);
     timer->expire = cur + 3 * TIMESLOT;
     users_timer[connfd].timer = timer;
@@ -252,7 +272,7 @@ void WebServer::adjust_timer(util_timer *timer)
 // 删除非活动连接在socket上的注册事件，并关闭之
 void WebServer::deal_timer(util_timer *timer, int sockfd)
 {
-    timer->cb_func(&users_timer[sockfd]);
+    timer->cb_func(m_epollfd, &users_timer[sockfd]);
     if (timer)
     {
         utils.m_timer_lst.del_timer(timer);
@@ -473,7 +493,7 @@ void WebServer::eventLoop()
             else if ((sockfd == m_pipefd[0]) && (events[i].events & EPOLLIN))
             {
                 bool flag = dealwithsignal(timeout, stop_server);
-                if (false == flag)
+                if (flag == false)
                     LOG_ERROR("%s", "deal signal data failure");
             }
             // 处理客户连接上接收到的数据
@@ -491,7 +511,7 @@ void WebServer::eventLoop()
         if (timeout)
         {
             // 定时处理任务，重新定时以不断触发SIGALRM信号 检查定时器链表中是否有到期的定时器 处理非活动连接
-            utils.timer_handler();
+            utils.timer_handler(m_epollfd);
             LOG_INFO("%s", "timer tick");
             timeout = false;
         }
