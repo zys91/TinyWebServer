@@ -9,7 +9,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
-#include "../log/log.h"
+#include "log/log.h"
 
 using namespace std;
 
@@ -30,8 +30,8 @@ void http_conn::initmysql_result(connection_pool *connPool)
     MYSQL *mysql = NULL;
     connectionRAII mysqlcon(&mysql, connPool);
 
-    // 在user表中检索username，passwd数据，浏览器端输入
-    if (mysql_query(mysql, "SELECT username,passwd FROM user"))
+    // 在user表中检索username，password数据，浏览器端输入
+    if (mysql_query(mysql, "SELECT username, password FROM user"))
     {
         LOG_ERROR("SELECT error:%s\n", mysql_error(mysql));
     }
@@ -62,26 +62,26 @@ int http_conn::m_epollfd = -1;
 locker http_conn::m_sql_lock;
 locker http_conn::m_count_lock;
 map<string, string> http_conn::m_users;
+sort_timer_lst *http_conn::m_timer_lst;
 
 // 关闭连接，关闭一个连接，客户总量减一
-void http_conn::close_conn(bool real_close)
+void http_conn::close_conn()
 {
-    if (real_close && (m_sockfd != -1))
-    {
-        printf("close %d\n", m_sockfd);
-        utils.removefd(m_epollfd, m_sockfd);
-        m_sockfd = -1;
-        m_count_lock.lock();
-        m_user_count--;
-        m_count_lock.unlock();
-    }
+    epoll_ctl(m_epollfd, EPOLL_CTL_DEL, m_sockfd, 0);
+    close(m_sockfd);
+    m_count_lock.lock();
+    m_user_count--;
+    m_count_lock.unlock();
+    m_timer_lst->del_timer(m_timer);
+    LOG_INFO("close fd %d", m_sockfd);
 }
 
 // 初始化连接,外部调用初始化套接字地址
-void http_conn::init(int sockfd, const sockaddr_in &addr, char *root, int trigMode,
+void http_conn::init(int sockfd, util_timer *timer, const sockaddr_in &addr, char *root, int trigMode,
                      int disable_log, string user, string passwd, string sqlname)
 {
     m_sockfd = sockfd;
+    m_timer = timer;
     m_address = addr;
 
     utils.addfd(m_epollfd, sockfd, true, m_trigMode);
@@ -119,10 +119,7 @@ void http_conn::init()
     m_checked_idx = 0;
     m_read_idx = 0;
     m_write_idx = 0;
-    cgi = 0;
     m_state = 0;
-    io_fail_flag = 0;
-    io_done_flag = 0;
 
     memset(m_read_buf, '\0', READ_BUFFER_SIZE);
     memset(m_write_buf, '\0', WRITE_BUFFER_SIZE);
@@ -179,7 +176,7 @@ bool http_conn::read_once()
         bytes_read = recv(m_sockfd, m_read_buf + m_read_idx, READ_BUFFER_SIZE - m_read_idx, 0);
         m_read_idx += bytes_read;
 
-        if (bytes_read <= 0)
+        if (bytes_read <= 0 && errno != EAGAIN)
         {
             return false;
         }
@@ -198,7 +195,7 @@ bool http_conn::read_once()
                     break;
                 return false;
             }
-            else if (bytes_read == 0)
+            else if (bytes_read == 0) // 对方关闭连接
             {
                 return false;
             }
@@ -223,7 +220,6 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
     else if (strcasecmp(method, "POST") == 0)
     {
         m_method = POST;
-        cgi = 1;
     }
     else
         return BAD_REQUEST;
@@ -362,10 +358,9 @@ http_conn::HTTP_CODE http_conn::do_request()
     // printf("m_url:%s\n", m_url);
     const char *p = strrchr(m_url, '/');
 
-    // 处理cgi
-    if (cgi == 1 && (*(p + 1) == '2' || *(p + 1) == '3'))
+    // 处理登录与注册
+    if (m_method == POST && (*(p + 1) == '2' || *(p + 1) == '3'))
     {
-
         // 根据标志判断是登录检测还是注册检测
         // char flag = m_url[1];
 
@@ -393,7 +388,7 @@ http_conn::HTTP_CODE http_conn::do_request()
             // 如果是注册，先检测数据库中是否有重名的
             // 没有重名的，进行增加数据
             char *sql_insert = (char *)malloc(sizeof(char) * 200);
-            strcpy(sql_insert, "INSERT INTO user(username, passwd) VALUES(");
+            strcpy(sql_insert, "INSERT INTO user(username, password) VALUES(");
             strcat(sql_insert, "'");
             strcat(sql_insert, name);
             strcat(sql_insert, "', '");
@@ -521,7 +516,7 @@ bool http_conn::write()
 
         bytes_have_send += temp;
         bytes_to_send -= temp;
-        if (bytes_have_send >= (int)m_iv[0].iov_len)
+        if (bytes_have_send >= m_write_idx)
         {
             m_iv[0].iov_len = 0;
             m_iv[1].iov_base = m_file_address + (bytes_have_send - m_write_idx);
@@ -530,7 +525,7 @@ bool http_conn::write()
         else
         {
             m_iv[0].iov_base = m_write_buf + bytes_have_send;
-            m_iv[0].iov_len = m_iv[0].iov_len - bytes_have_send;
+            m_iv[0].iov_len = m_write_idx - bytes_have_send;
         }
 
         if (bytes_to_send <= 0)
@@ -619,6 +614,7 @@ bool http_conn::process_write(HTTP_CODE ret)
             return false;
         break;
     }
+    case NO_RESOURCE:
     case BAD_REQUEST:
     {
         add_status_line(404, error_404_title);
@@ -667,18 +663,19 @@ bool http_conn::process_write(HTTP_CODE ret)
     return true;
 }
 
-void http_conn::process()
+bool http_conn::process()
 {
     HTTP_CODE read_ret = process_read();
     if (read_ret == NO_REQUEST)
     {
         utils.modfd(m_epollfd, m_sockfd, EPOLLIN, m_trigMode);
-        return;
+        return true;
     }
     bool write_ret = process_write(read_ret);
     if (!write_ret)
     {
-        close_conn();
+        return false;
     }
     utils.modfd(m_epollfd, m_sockfd, EPOLLOUT, m_trigMode);
+    return true;
 }

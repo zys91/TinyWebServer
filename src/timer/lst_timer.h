@@ -3,6 +3,8 @@
 
 #include <netinet/in.h>
 #include <stdlib.h>
+#include <unordered_set>
+#include "lock/locker.h"
 
 class util_timer;
 
@@ -42,6 +44,9 @@ private:
 
     util_timer *head;
     util_timer *tail;
+    std::unordered_set<util_timer *> ref;
+
+    locker m_lock;
 };
 
 #endif

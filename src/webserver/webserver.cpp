@@ -126,13 +126,13 @@ void WebServer::eventListen()
     // 优雅关闭连接 0:关闭 1:开启
     if (m_OPT_LINGER)
     {
-        tmp.l_onoff = 1; // Linger选项开启,且关闭套接字时延迟1秒钟
+        tmp.l_onoff = 1; // Linger选项开启，且关闭套接字时延迟1秒钟
         tmp.l_linger = 1;
         setsockopt(m_listenfd_v4, SOL_SOCKET, SO_LINGER, &tmp, sizeof(tmp));
     }
     else
     {
-        tmp.l_onoff = 0; // Linger选项被禁用,即关闭套接字时立即关闭
+        tmp.l_onoff = 0; // Linger选项被禁用，即关闭套接字时立即关闭
         setsockopt(m_listenfd_v4, SOL_SOCKET, SO_LINGER, &tmp, sizeof(tmp));
     }
 
@@ -166,13 +166,13 @@ void WebServer::eventListen()
         // 优雅关闭连接 0:关闭 1:开启
         if (m_OPT_LINGER)
         {
-            tmp.l_onoff = 1; // Linger选项开启,且关闭套接字时延迟1秒钟
+            tmp.l_onoff = 1; // Linger选项开启，且关闭套接字时延迟1秒钟
             tmp.l_linger = 1;
             setsockopt(m_listenfd_v6, SOL_SOCKET, SO_LINGER, &tmp, sizeof(tmp));
         }
         else
         {
-            tmp.l_onoff = 0; // Linger选项被禁用,即关闭套接字时立即关闭
+            tmp.l_onoff = 0; // Linger选项被禁用，即关闭套接字时立即关闭
             setsockopt(m_listenfd_v6, SOL_SOCKET, SO_LINGER, &tmp, sizeof(tmp));
         }
 
@@ -225,6 +225,7 @@ void WebServer::eventListen()
     utils.addsig(SIGALRM, utils.sig_handler, false);
     // 设置信号处理函数 SIGTERM: Termination 信号由kill函数发送(ctrl+c)，用来结束进程
     utils.addsig(SIGTERM, utils.sig_handler, false);
+    http_conn::m_timer_lst = &utils.m_timer_lst;
 
     // 计划一次TIMESLOT时间(s)触发SIGALRM信号 用于定时处理任务 定时关闭不活跃连接
     alarm(TIMESLOT);
@@ -234,7 +235,6 @@ void WebServer::eventListen()
 void timer_cb(int epollfd, client_data *user_data)
 {
     epoll_ctl(epollfd, EPOLL_CTL_DEL, user_data->sockfd, 0);
-    assert(user_data);
     close(user_data->sockfd);
     http_conn::m_count_lock.lock();
     http_conn::m_user_count--;
@@ -243,8 +243,6 @@ void timer_cb(int epollfd, client_data *user_data)
 
 void WebServer::timer(int connfd, struct sockaddr_in client_address)
 {
-    users[connfd].init(connfd, client_address, m_root, m_CONNTrigmode, m_disable_log, m_user, m_passWord, m_databaseName);
-
     // 初始化client_data数据
     // 创建定时器，设置回调函数和超时时间，绑定用户数据，将定时器添加到链表中
     users_timer[connfd].address = client_address;
@@ -256,6 +254,8 @@ void WebServer::timer(int connfd, struct sockaddr_in client_address)
     timer->expire = cur + 3 * TIMESLOT;
     users_timer[connfd].timer = timer;
     utils.m_timer_lst.add_timer(timer);
+
+    users[connfd].init(connfd, timer, client_address, m_root, m_CONNTrigmode, m_disable_log, m_user, m_passWord, m_databaseName);
 }
 
 // 若有数据传输，则将定时器往后延迟3个单位
@@ -273,14 +273,11 @@ void WebServer::adjust_timer(util_timer *timer)
 void WebServer::deal_timer(util_timer *timer, int sockfd)
 {
     timer->cb_func(m_epollfd, &users_timer[sockfd]);
-    if (timer)
-    {
-        utils.m_timer_lst.del_timer(timer);
-    }
+    utils.m_timer_lst.del_timer(timer);
     LOG_INFO("close fd %d", users_timer[sockfd].sockfd);
 }
 
-bool WebServer::dealclinetdata(int sockfd)
+bool WebServer::dealclientdata(int sockfd)
 {
     struct sockaddr_in client_address;
     socklen_t client_addrlength = sizeof(client_address);
@@ -374,20 +371,6 @@ void WebServer::dealwithread(int sockfd)
 
         // 若监测到读事件，将该事件放入请求队列
         m_pool->append(users + sockfd, 0);
-
-        while (true)
-        {
-            if (users[sockfd].io_done_flag == 1)
-            {
-                if (users[sockfd].io_fail_flag == 1)
-                {
-                    deal_timer(timer, sockfd);
-                    users[sockfd].io_fail_flag = 0;
-                }
-                users[sockfd].io_done_flag = 0;
-                break;
-            }
-        }
     }
     else
     {
@@ -406,7 +389,10 @@ void WebServer::dealwithread(int sockfd)
         }
         else
         {
-            deal_timer(timer, sockfd);
+            if (timer)
+            {
+                deal_timer(timer, sockfd);
+            }
         }
     }
 }
@@ -423,20 +409,6 @@ void WebServer::dealwithwrite(int sockfd)
         }
 
         m_pool->append(users + sockfd, 1);
-
-        while (true)
-        {
-            if (1 == users[sockfd].io_done_flag)
-            {
-                if (1 == users[sockfd].io_fail_flag)
-                {
-                    deal_timer(timer, sockfd);
-                    users[sockfd].io_fail_flag = 0;
-                }
-                users[sockfd].io_done_flag = 0;
-                break;
-            }
-        }
     }
     else
     {
@@ -452,7 +424,10 @@ void WebServer::dealwithwrite(int sockfd)
         }
         else
         {
-            deal_timer(timer, sockfd);
+            if (timer)
+            {
+                deal_timer(timer, sockfd);
+            }
         }
     }
 }
@@ -478,7 +453,7 @@ void WebServer::eventLoop()
             // 处理新到的客户连接
             if (sockfd == m_listenfd_v4 || sockfd == m_listenfd_v6)
             {
-                bool flag = dealclinetdata(sockfd);
+                bool flag = dealclientdata(sockfd);
                 if (flag == false)
                     continue;
             }
@@ -487,7 +462,10 @@ void WebServer::eventLoop()
             {
                 // 服务器端关闭连接，移除对应的定时器
                 util_timer *timer = users_timer[sockfd].timer;
-                deal_timer(timer, sockfd);
+                if (timer)
+                {
+                    deal_timer(timer, sockfd);
+                }
             }
             // 处理信号 alrm: 定时器信号 term: 服务器关闭信号
             else if ((sockfd == m_pipefd[0]) && (events[i].events & EPOLLIN))

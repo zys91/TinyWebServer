@@ -4,8 +4,8 @@
 #include <list>
 #include <exception>
 #include <pthread.h>
-#include "../lock/locker.h"
-#include "../mysqlpool/sql_connection_pool.h"
+#include "lock/locker.h"
+#include "mysqlpool/sql_connection_pool.h"
 
 template <typename T>
 class threadpool
@@ -23,7 +23,7 @@ private:
 
 private:
     int m_actor_model;           // 并发模型选择
-    connection_pool *m_connPool; // 数据库
+    connection_pool *m_connPool; // 数据库连接池
     int m_thread_number;         // 线程池中的线程数
     int m_max_requests;          // 请求队列中允许的最大请求数
     pthread_t *m_threads;        // 描述线程池的数组，其大小为m_thread_number
@@ -104,33 +104,32 @@ void threadpool<T>::run()
             {
                 if (request->read_once())
                 {
-                    request->io_done_flag = 1;
                     connectionRAII mysqlcon(&request->mysql, m_connPool);
-                    request->process();
+                    if (!request->process())
+                    {
+                        request->close_conn();
+                    }
                 }
                 else
                 {
-                    request->io_done_flag = 1;
-                    request->io_fail_flag = 1;
+                    request->close_conn();
                 }
             }
             else
             {
-                if (request->write())
+                if (!request->write())
                 {
-                    request->io_done_flag = 1;
-                }
-                else
-                {
-                    request->io_done_flag = 1;
-                    request->io_fail_flag = 1;
+                    request->close_conn();
                 }
             }
         }
         else
         {
             connectionRAII mysqlcon(&request->mysql, m_connPool);
-            request->process();
+            if (!request->process())
+            {
+                request->close_conn();
+            }
         }
     }
 }

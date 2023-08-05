@@ -8,7 +8,21 @@
 
 #include <iostream>
 #include <sys/time.h>
-#include "../lock/locker.h"
+#include "lock/locker.h"
+
+/*
+    将生产者-消费者模型封装为阻塞队列，创建一个写线程
+    工作线程将要写的内容push进队列，写线程从队列中取出内容，写入日志文件
+    用一个循环数组来模拟队列
+    m_mutex 互斥锁
+    cond 条件变量
+    m_array 队列实例化后的元素类型
+    m_size 队列当前实际使用大小
+    m_max_size 队列最大容量
+    m_front 指向队列的头指针
+    m_back 指向队列的尾指针，采取左闭右闭[m_front,m_back]
+    m_back = (m_back + 1) % m_max_size; 将事件增加到队尾
+*/
 
 template <class T>
 class block_queue
@@ -51,7 +65,6 @@ public:
         m_mutex.lock();
         if (m_size >= m_max_size)
         {
-
             m_mutex.unlock();
             return true;
         }
@@ -100,10 +113,8 @@ public:
     int size()
     {
         int tmp = 0;
-
         m_mutex.lock();
         tmp = m_size;
-
         m_mutex.unlock();
         return tmp;
     }
@@ -111,10 +122,8 @@ public:
     int max_size()
     {
         int tmp = 0;
-
         m_mutex.lock();
         tmp = m_max_size;
-
         m_mutex.unlock();
         return tmp;
     }
@@ -123,21 +132,23 @@ public:
     // 若当前没有线程等待条件变量,则唤醒无意义
     bool push(const T &item)
     {
-
         m_mutex.lock();
         if (m_size >= m_max_size)
         {
-
             m_cond.broadcast();
             m_mutex.unlock();
             return false;
         }
 
-        m_back = (m_back + 1) % m_max_size;
+        if (m_back == -1 && m_front == -1)
+        {
+            m_back = 0;
+            m_front = 0;
+        }
+        else
+            m_back = (m_back + 1) % m_max_size;
         m_array[m_back] = item;
-
         m_size++;
-
         m_cond.broadcast();
         m_mutex.unlock();
         return true;
@@ -155,8 +166,8 @@ public:
             }
         }
 
-        m_front = (m_front + 1) % m_max_size;
         item = m_array[m_front];
+        m_front = (m_front + 1) % m_max_size;
         m_size--;
         m_mutex.unlock();
         return true;
@@ -172,7 +183,7 @@ public:
         if (m_size <= 0)
         {
             t.tv_sec = now.tv_sec + ms_timeout / 1000;
-            t.tv_nsec = (ms_timeout % 1000) * 1000;
+            t.tv_nsec = (now.tv_usec + (ms_timeout % 1000) * 1000) * 1000;
             if (!m_cond.timewait(m_mutex.get(), t))
             {
                 m_mutex.unlock();
@@ -186,8 +197,8 @@ public:
             return false;
         }
 
-        m_front = (m_front + 1) % m_max_size;
         item = m_array[m_front];
+        m_front = (m_front + 1) % m_max_size;
         m_size--;
         m_mutex.unlock();
         return true;

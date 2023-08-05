@@ -1,7 +1,6 @@
 #include "config.h"
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
+#include <iostream>
+#include <getopt.h>
 
 using namespace std;
 
@@ -95,7 +94,8 @@ void Config::parse_arg(int argc, char *argv[])
             break;
         }
         default:
-            break;
+            cerr << "Invalid option: -" << static_cast<char>(optopt) << endl;
+            exit(EXIT_FAILURE);
         }
     }
 }

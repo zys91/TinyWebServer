@@ -1,7 +1,7 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include "../timer/lst_timer.h"
+#include "timer/lst_timer.h"
 
 class Utils
 {

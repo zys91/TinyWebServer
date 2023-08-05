@@ -8,9 +8,9 @@
 #include <sys/stat.h>
 #include <netinet/in.h>
 
-#include "../lock/locker.h"
-#include "../mysqlpool/sql_connection_pool.h"
-#include "../utils/utils.h"
+#include "lock/locker.h"
+#include "mysqlpool/sql_connection_pool.h"
+#include "utils/utils.h"
 
 class http_conn
 {
@@ -59,9 +59,9 @@ public:
     ~http_conn() {}
 
 public:
-    void init(int sockfd, const sockaddr_in &addr, char *, int, int, std::string user, std::string passwd, std::string sqlname);
-    void close_conn(bool real_close = true);
-    void process();
+    void init(int sockfd, util_timer *timer, const sockaddr_in &addr, char *, int, int, std::string user, std::string passwd, std::string sqlname);
+    void close_conn();
+    bool process();
     bool read_once();
     bool write();
     sockaddr_in *get_address()
@@ -69,8 +69,6 @@ public:
         return &m_address;
     }
     void initmysql_result(connection_pool *connPool);
-    int io_fail_flag; // IO读写失败标志
-    int io_done_flag; // IO读写完成标志
 
 private:
     void init();
@@ -98,11 +96,13 @@ public:
     static locker m_sql_lock;
     static locker m_count_lock;
     static std::map<std::string, std::string> m_users;
+    static sort_timer_lst *m_timer_lst;
     MYSQL *mysql;
     int m_state; // 读为0, 写为1
 
 private:
     int m_sockfd;
+    util_timer *m_timer;
     sockaddr_in m_address;
     char m_read_buf[READ_BUFFER_SIZE];
     long m_read_idx;
@@ -117,12 +117,11 @@ private:
     char *m_version;
     char *m_host;
     long m_content_length;
-    bool m_linger;
+    bool m_linger; // 支持keep-alive 长连接
     char *m_file_address;
     struct stat m_file_stat;
     struct iovec m_iv[2];
     int m_iv_count;
-    int cgi;        // 是否启用POST
     char *m_string; // 存储请求头数据
     int bytes_to_send;
     int bytes_have_send;

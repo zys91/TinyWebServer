@@ -5,8 +5,8 @@
 #include <list>
 #include <mysql/mysql.h>
 
-#include "../lock/locker.h"
-#include "../log/log.h"
+#include "lock/locker.h"
+#include "log/log.h"
 
 class connection_pool
 {

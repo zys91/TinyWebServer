@@ -4,10 +4,10 @@
 #include <string>
 #include <sys/epoll.h>
 
-#include "../timer/lst_timer.h"
-#include "../threadpool/threadpool.h"
-#include "../utils/utils.h"
-#include "../http/http_conn.h"
+#include "timer/lst_timer.h"
+#include "threadpool/threadpool.h"
+#include "utils/utils.h"
+#include "http/http_conn.h"
 
 const int MAX_FD = 65536;           // 最大文件描述符
 const int MAX_EVENT_NUMBER = 10000; // 最大事件数
@@ -32,7 +32,7 @@ public:
     void timer(int connfd, struct sockaddr_in client_address);
     void adjust_timer(util_timer *timer);
     void deal_timer(util_timer *timer, int sockfd);
-    bool dealclinetdata(int sockfd);
+    bool dealclientdata(int sockfd);
     bool dealwithsignal(bool &timeout, bool &stop_server);
     void dealwithread(int sockfd);
     void dealwithwrite(int sockfd);
