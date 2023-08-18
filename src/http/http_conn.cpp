@@ -8,6 +8,7 @@
 #include <sys/mman.h>
 #include <sys/uio.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 
 #include "log/log.h"
 
@@ -77,7 +78,7 @@ void http_conn::close_conn()
 }
 
 // 初始化连接,外部调用初始化套接字地址
-void http_conn::init(int sockfd, util_timer *timer, const sockaddr_in &addr, char *root, int trigMode,
+void http_conn::init(int sockfd, util_timer *timer, const sockaddr &addr, char *root, int trigMode,
                      int disable_log, string user, string passwd, string sqlname)
 {
     m_sockfd = sockfd;
@@ -202,6 +203,24 @@ bool http_conn::read_once()
             m_read_idx += bytes_read;
         }
         return true;
+    }
+}
+
+string http_conn::get_addr()
+{
+    if (m_address.sa_family == AF_INET)
+    {
+        const sockaddr_in *ipv4Addr = reinterpret_cast<const sockaddr_in *>(&m_address);
+        char ipv4Str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(ipv4Addr->sin_addr), ipv4Str, INET_ADDRSTRLEN);
+        return string(ipv4Str);
+    }
+    else
+    {
+        const sockaddr_in6 *ipv6Addr = reinterpret_cast<const sockaddr_in6 *>(&m_address);
+        char ipv6Str[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &(ipv6Addr->sin6_addr), ipv6Str, INET6_ADDRSTRLEN);
+        return string(ipv6Str);
     }
 }
 
@@ -560,9 +579,6 @@ bool http_conn::add_response(const char *format, ...)
     }
     m_write_idx += len;
     va_end(arg_list);
-
-    LOG_INFO("request:%s", m_write_buf);
-
     return true;
 }
 
@@ -643,6 +659,7 @@ bool http_conn::process_write(HTTP_CODE ret)
             m_iv[1].iov_len = m_file_stat.st_size;
             m_iv_count = 2;
             bytes_to_send = m_write_idx + m_file_stat.st_size;
+            LOG_INFO("response: %s", m_write_buf);
             return true;
         }
         else
@@ -660,6 +677,7 @@ bool http_conn::process_write(HTTP_CODE ret)
     m_iv[0].iov_len = m_write_idx;
     m_iv_count = 1;
     bytes_to_send = m_write_idx;
+    LOG_INFO("response: %s", m_write_buf);
     return true;
 }
 

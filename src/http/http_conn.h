@@ -59,15 +59,12 @@ public:
     ~http_conn() {}
 
 public:
-    void init(int sockfd, util_timer *timer, const sockaddr_in &addr, char *, int, int, std::string user, std::string passwd, std::string sqlname);
+    void init(int sockfd, util_timer *timer, const sockaddr &addr, char *, int, int, std::string user, std::string passwd, std::string sqlname);
     void close_conn();
     bool process();
     bool read_once();
     bool write();
-    sockaddr_in *get_address()
-    {
-        return &m_address;
-    }
+    std::string get_addr();
     void initmysql_result(connection_pool *connPool);
 
 private:
@@ -103,7 +100,7 @@ public:
 private:
     int m_sockfd;
     util_timer *m_timer;
-    sockaddr_in m_address;
+    sockaddr m_address;
     char m_read_buf[READ_BUFFER_SIZE];
     long m_read_idx;
     long m_checked_idx;

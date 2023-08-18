@@ -49,8 +49,7 @@ Linux下C++轻量级Web服务器，助力初学者快速实践网络编程，搭
 * 启动server
 
     ```C++
-    cd bin
-    ./server
+    ./bin/server
     ```
 
 * 浏览器端

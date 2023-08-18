@@ -1,5 +1,4 @@
 #include "webserver.h"
-#include <arpa/inet.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
@@ -19,7 +18,7 @@ WebServer::WebServer()
     // web资源文件夹路径
     char server_path[200];
     getcwd(server_path, 200);
-    char root[13] = "/../res/root";
+    char root[13] = "/res/root";
     m_root = (char *)malloc(strlen(server_path) + strlen(root) + 1);
     strcpy(m_root, server_path);
     strcat(m_root, root);
@@ -30,6 +29,7 @@ WebServer::WebServer()
 
 WebServer::~WebServer()
 {
+    LOG_INFO("%s", "========== Server stop ==========");
     close(m_epollfd);
     close(m_listenfd_v4);
     if (m_enable_ipv6)
@@ -141,7 +141,7 @@ void WebServer::eventListen()
     setsockopt(m_listenfd_v4, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag));
 
     // 定义 IPv4 套接字地址结构
-    struct sockaddr_in address_v4;
+    sockaddr_in address_v4;
     bzero(&address_v4, sizeof(address_v4));
     address_v4.sin_family = AF_INET;
     address_v4.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -149,7 +149,7 @@ void WebServer::eventListen()
 
     int ret = 0;
     // 绑定 IPv4 地址
-    ret = bind(m_listenfd_v4, (struct sockaddr *)&address_v4, sizeof(address_v4));
+    ret = bind(m_listenfd_v4, (sockaddr *)&address_v4, sizeof(address_v4));
     assert(ret >= 0);
 
     // 监听，设置适当的最大挂起连接数backlog(128)
@@ -182,14 +182,14 @@ void WebServer::eventListen()
         setsockopt(m_listenfd_v6, IPPROTO_IPV6, IPV6_V6ONLY, (const void *)&flag, sizeof(flag));
 
         // 定义 IPv6 套接字地址结构
-        struct sockaddr_in6 address_v6;
+        sockaddr_in6 address_v6;
         bzero(&address_v6, sizeof(address_v6));
         address_v6.sin6_family = AF_INET6;
         address_v6.sin6_addr = in6addr_any;
         address_v6.sin6_port = htons(m_listen_port);
 
         // 绑定 IPv6 地址
-        ret = bind(m_listenfd_v6, (struct sockaddr *)&address_v6, sizeof(address_v6));
+        ret = bind(m_listenfd_v6, (sockaddr *)&address_v6, sizeof(address_v6));
         assert(ret >= 0);
 
         // 监听，设置适当的最大挂起连接数backlog(128)
@@ -223,8 +223,10 @@ void WebServer::eventListen()
     utils.addsig(SIGPIPE, SIG_IGN);
     // 设置信号处理函数 SIGALRM: Alarm clock 信号由alarm函数设置的定时器超时时产生
     utils.addsig(SIGALRM, utils.sig_handler, false);
-    // 设置信号处理函数 SIGTERM: Termination 信号由kill函数发送(ctrl+c)，用来结束进程
+    // 设置信号处理函数 SIGTERM: Termination 信号由kill函数发送，用来结束进程
     utils.addsig(SIGTERM, utils.sig_handler, false);
+    // 设置信号处理函数 SIGINT: Interrupt 信号由键盘产生，通常是CTRL+C或者DELETE。用来中断进程
+    utils.addsig(SIGINT, utils.sig_handler, false);
     http_conn::m_timer_lst = &utils.m_timer_lst;
 
     // 计划一次TIMESLOT时间(s)触发SIGALRM信号 用于定时处理任务 定时关闭不活跃连接
@@ -241,11 +243,10 @@ void timer_cb(int epollfd, client_data *user_data)
     http_conn::m_count_lock.unlock();
 }
 
-void WebServer::timer(int connfd, struct sockaddr_in client_address)
+void WebServer::timer(int connfd, sockaddr client_address)
 {
     // 初始化client_data数据
     // 创建定时器，设置回调函数和超时时间，绑定用户数据，将定时器添加到链表中
-    users_timer[connfd].address = client_address;
     users_timer[connfd].sockfd = connfd;
     util_timer *timer = new util_timer;
     timer->user_data = &users_timer[connfd];
@@ -279,12 +280,12 @@ void WebServer::deal_timer(util_timer *timer, int sockfd)
 
 bool WebServer::dealclientdata(int sockfd)
 {
-    struct sockaddr_in client_address;
+    sockaddr client_address;
     socklen_t client_addrlength = sizeof(client_address);
     // LT
     if (0 == m_LISTENTrigmode)
     {
-        int connfd = accept(sockfd, (struct sockaddr *)&client_address, &client_addrlength);
+        int connfd = accept(sockfd, &client_address, &client_addrlength);
         if (connfd < 0)
         {
             LOG_ERROR("%s:errno is:%d", "accept error", errno);
@@ -303,7 +304,7 @@ bool WebServer::dealclientdata(int sockfd)
     {
         while (1)
         {
-            int connfd = accept(sockfd, (struct sockaddr *)&client_address, &client_addrlength);
+            int connfd = accept(sockfd, &client_address, &client_addrlength);
             if (connfd < 0)
             {
                 LOG_ERROR("%s:errno is:%d", "accept error", errno);
@@ -346,6 +347,11 @@ bool WebServer::dealwithsignal(bool &timeout, bool &stop_server)
                 timeout = true;
                 break;
             }
+            case SIGINT:
+            {
+                stop_server = true;
+                break;
+            }
             case SIGTERM:
             {
                 stop_server = true;
@@ -377,7 +383,7 @@ void WebServer::dealwithread(int sockfd)
         // proactor
         if (users[sockfd].read_once())
         {
-            LOG_INFO("deal with the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+            LOG_INFO("read data from the client(%s)", users[sockfd].get_addr().c_str());
 
             // 若监测到读事件，将该事件放入请求队列
             m_pool->append(users + sockfd, 0);
@@ -415,7 +421,7 @@ void WebServer::dealwithwrite(int sockfd)
         // proactor
         if (users[sockfd].write())
         {
-            LOG_INFO("send data to the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+            LOG_INFO("send data to the client(%s)", users[sockfd].get_addr().c_str());
 
             if (timer)
             {
@@ -436,6 +442,15 @@ void WebServer::eventLoop()
 {
     bool timeout = false;
     bool stop_server = false;
+
+    LOG_INFO("%s", "========== Server start ==========");
+    LOG_INFO("Listen port: %d", m_listen_port);
+    LOG_INFO("Opt_linger: %d", m_OPT_LINGER);
+    LOG_INFO("TrigMode: %d", m_trigMode);
+    LOG_INFO("Thread_num: %d", m_thread_num);
+    LOG_INFO("Sql_num: %d", m_sql_num);
+    LOG_INFO("ActorModel: %d", m_actormodel);
+    LOG_INFO("EnableIpv6: %d", m_enable_ipv6);
 
     while (!stop_server)
     {
