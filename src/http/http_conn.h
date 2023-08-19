@@ -59,7 +59,7 @@ public:
     ~http_conn() {}
 
 public:
-    void init(int sockfd, util_timer *timer, const sockaddr &addr, char *, int, int, std::string user, std::string passwd, std::string sqlname);
+    void init(int sockfd, util_timer *timer, const sockaddr_storage &addr, char *, int, int, std::string user, std::string passwd, std::string sqlname);
     void close_conn();
     bool process();
     bool read_once();
@@ -100,7 +100,7 @@ public:
 private:
     int m_sockfd;
     util_timer *m_timer;
-    sockaddr m_address;
+    struct sockaddr_storage m_address;
     char m_read_buf[READ_BUFFER_SIZE];
     long m_read_idx;
     long m_checked_idx;

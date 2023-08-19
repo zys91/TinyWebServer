@@ -29,7 +29,7 @@ public:
     void trig_mode();
     void eventListen();
     void eventLoop();
-    void timer(int connfd, sockaddr client_address);
+    void timer(int connfd, sockaddr_storage client_address);
     void adjust_timer(util_timer *timer);
     void deal_timer(util_timer *timer, int sockfd);
     bool dealclientdata(int sockfd);

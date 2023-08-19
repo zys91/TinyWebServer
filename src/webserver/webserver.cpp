@@ -243,7 +243,7 @@ void timer_cb(int epollfd, client_data *user_data)
     http_conn::m_count_lock.unlock();
 }
 
-void WebServer::timer(int connfd, sockaddr client_address)
+void WebServer::timer(int connfd, sockaddr_storage client_address)
 {
     // 初始化client_data数据
     // 创建定时器，设置回调函数和超时时间，绑定用户数据，将定时器添加到链表中
@@ -280,12 +280,12 @@ void WebServer::deal_timer(util_timer *timer, int sockfd)
 
 bool WebServer::dealclientdata(int sockfd)
 {
-    sockaddr client_address;
+    struct sockaddr_storage client_address;
     socklen_t client_addrlength = sizeof(client_address);
     // LT
     if (0 == m_LISTENTrigmode)
     {
-        int connfd = accept(sockfd, &client_address, &client_addrlength);
+        int connfd = accept(sockfd, (sockaddr *)&client_address, &client_addrlength);
         if (connfd < 0)
         {
             LOG_ERROR("%s:errno is:%d", "accept error", errno);
@@ -304,7 +304,7 @@ bool WebServer::dealclientdata(int sockfd)
     {
         while (1)
         {
-            int connfd = accept(sockfd, &client_address, &client_addrlength);
+            int connfd = accept(sockfd, (sockaddr *)&client_address, &client_addrlength);
             if (connfd < 0)
             {
                 LOG_ERROR("%s:errno is:%d", "accept error", errno);

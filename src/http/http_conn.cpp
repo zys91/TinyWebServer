@@ -78,7 +78,7 @@ void http_conn::close_conn()
 }
 
 // 初始化连接,外部调用初始化套接字地址
-void http_conn::init(int sockfd, util_timer *timer, const sockaddr &addr, char *root, int trigMode,
+void http_conn::init(int sockfd, util_timer *timer, const sockaddr_storage &addr, char *root, int trigMode,
                      int disable_log, string user, string passwd, string sqlname)
 {
     m_sockfd = sockfd;
@@ -208,7 +208,7 @@ bool http_conn::read_once()
 
 string http_conn::get_addr()
 {
-    if (m_address.sa_family == AF_INET)
+    if (m_address.ss_family == AF_INET)
     {
         const sockaddr_in *ipv4Addr = reinterpret_cast<const sockaddr_in *>(&m_address);
         char ipv4Str[INET_ADDRSTRLEN];
