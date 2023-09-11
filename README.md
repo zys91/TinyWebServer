@@ -43,7 +43,7 @@ Linux下C++轻量级Web服务器，助力初学者快速实践网络编程，搭
 * build
 
     ```C++
-    sh ./build.sh
+    ./build.sh
     ```
 
 * 启动server
@@ -62,7 +62,7 @@ Linux下C++轻量级Web服务器，助力初学者快速实践网络编程，搭
 ------
 
 ```C++
-./server [-p port] [-l log_writeMode] [-m trigMode] [-o OPT_LINGER] [-s sql_num] [-t thread_num] [-c disable_log] [-a actor_model]
+./bin/server [-p port] [-l log_writeMode] [-m trigMode] [-o OPT_LINGER] [-s sql_num] [-t thread_num] [-c disable_log] [-a actor_model] [-n enable_ipv6]
 ```
 
 温馨提示:以上参数不是非必须，不用全部使用，根据个人情况搭配选用即可.

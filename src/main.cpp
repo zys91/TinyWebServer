@@ -6,7 +6,7 @@ using namespace std;
 int main(int argc, char *argv[])
 {
     // 需要修改的数据库信息：IP地址、端口、登录名、密码、库名
-    string url = "192.168.8.215";
+    string url = "127.0.0.1";
     int port = 3306;
     string user = "root";
     string passwd = "root";
